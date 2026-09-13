@@ -29,6 +29,9 @@ SEND_EXISTING_ON_FIRST_RUN = os.getenv(
 MENTION = os.getenv("MENTION", "").strip()
 RUN_ONCE = os.getenv("RUN_ONCE", "false").lower() == "true"
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
+PREPARE_FILE = os.getenv("PREPARE_FILE", "").strip()
+SEND_FILE = os.getenv("SEND_FILE", "").strip()
+MAX_POST_AGE_DAYS = int(os.getenv("MAX_POST_AGE_DAYS", "14"))
 
 
 def make_session():
@@ -126,12 +129,38 @@ def save_seen(seen):
     temp_file.replace(STATE_FILE)
 
 
+def save_json(path, payload):
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temp_file = destination.with_suffix(destination.suffix + ".tmp")
+    with temp_file.open("w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2)
+        file.write("\n")
+        file.flush()
+        os.fsync(file.fileno())
+    temp_file.replace(destination)
+
+
 def format_date(timestamp):
     try:
         date = datetime.fromtimestamp(float(timestamp), tz=timezone.utc)
         return date.strftime("%b %d, %Y")
     except (TypeError, ValueError, OSError):
         return "Unknown"
+
+
+def is_recent(job, now=None):
+    """Return whether a listing is recent enough to notify."""
+    try:
+        posted = float(job.get("date_posted"))
+        if posted > 10_000_000_000:  # Accept millisecond timestamps too.
+            posted /= 1000
+    except (TypeError, ValueError):
+        return False
+
+    current = time.time() if now is None else now
+    age_seconds = current - posted
+    return -86400 <= age_seconds <= MAX_POST_AGE_DAYS * 86400
 
 
 def trim(text, limit):
@@ -237,10 +266,63 @@ def run_once():
     return len(new_jobs)
 
 
+def prepare_jobs():
+    """Persist IDs first and write a separate batch for later delivery."""
+    jobs = fetch_jobs()
+    jobs_by_key = {job_key(job): job for job in jobs}
+    current_keys = set(jobs_by_key)
+    seen = load_seen()
+
+    if seen is None and not SEND_EXISTING_ON_FIRST_RUN:
+        new_jobs = []
+        print(
+            f"Initialized with {len(current_keys)} current Summer 2027 jobs. "
+            "No existing jobs were queued."
+        )
+    else:
+        seen = seen or set()
+        discovered = [jobs_by_key[key] for key in current_keys - seen]
+        new_jobs = [job for job in discovered if is_recent(job)]
+        stale_count = len(discovered) - len(new_jobs)
+        print(
+            f"Discovered {len(discovered)} new job(s); queued {len(new_jobs)} "
+            f"and skipped {stale_count} older than {MAX_POST_AGE_DAYS} days."
+        )
+
+    new_jobs.sort(key=job_sort_key)
+    save_seen((seen or set()) | current_keys)
+    save_json(PREPARE_FILE, new_jobs)
+    return len(new_jobs)
+
+
+def send_prepared_jobs():
+    try:
+        with Path(SEND_FILE).open("r", encoding="utf-8") as file:
+            jobs = json.load(file)
+    except (json.JSONDecodeError, OSError) as error:
+        raise SystemExit(f"Could not read prepared jobs from {SEND_FILE}") from error
+    if not isinstance(jobs, list):
+        raise SystemExit(f"Invalid prepared jobs format in {SEND_FILE}")
+
+    print(f"Sending {len(jobs)} prepared job(s).")
+    for job in jobs:
+        post_job(job)
+        print(
+            f"Posted: {job.get('company_name', 'Unknown')} | "
+            f"{job.get('title', 'Internship')}"
+        )
+        time.sleep(1)
+    return len(jobs)
+
+
 def validate_config():
+    if PREPARE_FILE and SEND_FILE:
+        raise SystemExit("PREPARE_FILE and SEND_FILE cannot be used together")
+    if MAX_POST_AGE_DAYS < 1:
+        raise SystemExit("MAX_POST_AGE_DAYS must be at least 1")
     if POLL_SECONDS < 60 and not RUN_ONCE:
         raise SystemExit("POLL_SECONDS must be at least 60")
-    if DRY_RUN:
+    if DRY_RUN or PREPARE_FILE:
         return
     parsed = urlparse(DISCORD_WEBHOOK_URL)
     valid_hosts = {"discord.com", "discordapp.com"}
@@ -257,6 +339,12 @@ def validate_config():
 
 def main():
     validate_config()
+    if PREPARE_FILE:
+        prepare_jobs()
+        return
+    if SEND_FILE:
+        send_prepared_jobs()
+        return
     if RUN_ONCE:
         print("Checking SimplifyJobs Summer 2027 internships once.")
         run_once()
