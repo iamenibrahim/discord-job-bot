@@ -50,8 +50,10 @@ server needs to stay running.
    old jobs. Future runs alert only on newly discovered listings.
 
 The workflow checks every five minutes, although GitHub may delay scheduled runs
-during busy periods. It commits `seen_jobs.json` so deduplication survives fresh
-runners. State is saved even after a partial posting failure, reducing repeats.
+during busy periods. Before contacting Discord, it commits `seen_jobs.json` so
+deduplication survives fresh runners. If that commit or push fails, it sends
+nothing. This prevents a failed state save from causing duplicate alerts later.
+Listings posted more than 14 days ago are recorded as seen but are not sent.
 
 Do not set `SEND_EXISTING_ON_FIRST_RUN=true` unless you intentionally want every
 current listing sent.
@@ -68,6 +70,7 @@ current listing sent.
 | `RUN_ONCE` | `false` | Perform one check and exit |
 | `DRY_RUN` | `false` | Print without Discord or state changes |
 | `LISTINGS_URL` | SimplifyJobs JSON URL | Override the upstream source |
+| `MAX_POST_AGE_DAYS` | `14` | Ignore listings older than this |
 
 ## Tests
 
