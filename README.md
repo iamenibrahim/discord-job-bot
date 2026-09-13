@@ -1,58 +1,79 @@
 # SimplifyJobs Summer 2027 Discord Webhook
 
-Posts newly added active Summer 2027 internships from `SimplifyJobs/Summer2027-Internships` to a Discord webhook.
+Posts newly added, active Summer 2027 internships from
+`SimplifyJobs/Summer2027-Internships` to a Discord webhook. It reads Simplify's
+structured JSON dataset instead of scraping the rendered README.
 
-The bot reads the repository's structured `.github/scripts/listings.json` dataset instead of scraping the rendered README.
+## Fix the `dotenv` import error
+
+`ModuleNotFoundError: No module named 'dotenv'` means the dependencies were not
+installed in the Python environment running the script. From this directory:
+
+```bash
+py -m pip install -r requirements.txt
+py simplify_discord_webhook.py
+```
+
+On macOS or Linux, replace `py` with `python3`. In VS Code, select the same
+interpreter where the install command placed the packages.
 
 ## Local setup
 
-```bash
-pip install -r requirements.txt
-```
+Copy `.env.example` to `.env`, then replace the example webhook value. The real
+`.env` is ignored by Git. Never paste a webhook into source, commits, issues, or
+pull requests. If one is exposed, delete it in Discord and create a new one.
 
-Copy `.env.example` to `.env`, then set:
-
-```env
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-```
-
-Run:
+Safe verification that never contacts Discord:
 
 ```bash
-python simplify_discord_webhook.py
+DRY_RUN=true RUN_ONCE=true python3 simplify_discord_webhook.py
 ```
 
-## GitHub Actions hosting
+PowerShell:
 
-This repository includes `.github/workflows/internships.yml`, which checks for new roles every 5 minutes.
-
-Add your Discord webhook under GitHub repository settings as an Actions secret named:
-
-```text
-DISCORD_WEBHOOK_URL
+```powershell
+$env:DRY_RUN="true"
+$env:RUN_ONCE="true"
+py simplify_discord_webhook.py
 ```
 
-The workflow runs the script once per invocation and commits `seen_jobs.json`, so subsequent runs only send newly added jobs.
+## Free hosting with GitHub Actions
 
-By default, the first run records all existing Summer 2027 listings without flooding Discord.
+For this public repository, the included scheduled workflow is a free host. No
+server needs to stay running.
 
-## Optional environment variables
+1. Open **Settings > Secrets and variables > Actions** in this repository.
+2. Choose **New repository secret**.
+3. Name it `DISCORD_WEBHOOK_URL` and paste the webhook URL as its value.
+4. Open **Actions > Internship Alerts** and enable workflows if GitHub asks.
+5. Run the workflow manually once. It records current listings without sending
+   old jobs. Future runs alert only on newly discovered listings.
 
-```env
-POLL_SECONDS=300
-MENTION=
-SEND_EXISTING_ON_FIRST_RUN=false
-STATE_FILE=seen_jobs.json
+The workflow checks every five minutes, although GitHub may delay scheduled runs
+during busy periods. It commits `seen_jobs.json` so deduplication survives fresh
+runners. State is saved even after a partial posting failure, reducing repeats.
+
+Do not set `SEND_EXISTING_ON_FIRST_RUN=true` unless you intentionally want every
+current listing sent.
+
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DISCORD_WEBHOOK_URL` | none | Required except in dry-run mode |
+| `POLL_SECONDS` | `300` | Delay for continuous local hosting |
+| `SEND_EXISTING_ON_FIRST_RUN` | `false` | Send the initial backlog |
+| `STATE_FILE` | `seen_jobs.json` | Persistent deduplication state |
+| `MENTION` | empty | Optional `@everyone`, user, or role mention |
+| `RUN_ONCE` | `false` | Perform one check and exit |
+| `DRY_RUN` | `false` | Print without Discord or state changes |
+| `LISTINGS_URL` | SimplifyJobs JSON URL | Override the upstream source |
+
+## Tests
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+python3 -m pytest
 ```
 
-For a Discord role ping:
-
-```env
-MENTION=<@&ROLE_ID>
-```
-
-For `@everyone`:
-
-```env
-MENTION=@everyone
-```
+Tests mock all network and Discord behavior. They send no messages.
