@@ -28,15 +28,14 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Check internships
+      - name: Prepare new listings
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          RUN_ONCE: "true"
+          PREPARE_FILE: jobs_to_post.json
           SEND_EXISTING_ON_FIRST_RUN: "false"
+          MAX_POST_AGE_DAYS: "14"
         run: python simplify_discord_webhook.py
 
-      - name: Save seen jobs
-        if: always()
+      - name: Save seen jobs before sending
         run: |
           if [ ! -f seen_jobs.json ]; then
             exit 0
@@ -48,3 +47,9 @@ jobs:
           git commit -m "Update seen internships"
           git pull --rebase --autostash
           git push
+
+      - name: Send prepared listings
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SEND_FILE: jobs_to_post.json
+        run: python simplify_discord_webhook.py

@@ -7,3 +7,4 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+jobs_to_post.json
