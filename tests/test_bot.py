@@ -1,4 +1,5 @@
 import json
+import time
 
 import pytest
 
@@ -72,3 +73,34 @@ def test_dry_run_never_calls_discord_or_changes_state(tmp_path, monkeypatch):
     monkeypatch.setattr(bot, "post_job", lambda job: pytest.fail("Discord called"))
     assert bot.run_once() == 1
     assert state.read_text(encoding="utf-8") == before
+
+
+def test_prepare_persists_before_delivery_and_skips_old_jobs(tmp_path, monkeypatch):
+    state = tmp_path / "seen.json"
+    prepared = tmp_path / "prepared.json"
+    now = time.time()
+    recent = sample_job(id="recent", date_posted=now - 86400)
+    old = sample_job(id="old", date_posted=now - 30 * 86400)
+    monkeypatch.setattr(bot, "STATE_FILE", state)
+    monkeypatch.setattr(bot, "PREPARE_FILE", str(prepared))
+    monkeypatch.setattr(bot, "SEND_EXISTING_ON_FIRST_RUN", True)
+    monkeypatch.setattr(bot, "fetch_jobs", lambda: [recent, old])
+
+    assert bot.prepare_jobs() == 1
+    assert json.loads(prepared.read_text(encoding="utf-8"))[0]["id"] == "recent"
+    assert json.loads(state.read_text(encoding="utf-8"))["seen"] == [
+        "id:old",
+        "id:recent",
+    ]
+
+
+def test_send_prepared_posts_each_job(tmp_path, monkeypatch):
+    prepared = tmp_path / "prepared.json"
+    prepared.write_text(json.dumps([sample_job()]), encoding="utf-8")
+    monkeypatch.setattr(bot, "SEND_FILE", str(prepared))
+    monkeypatch.setattr(bot.time, "sleep", lambda seconds: None)
+    sent = []
+    monkeypatch.setattr(bot, "post_job", sent.append)
+
+    assert bot.send_prepared_jobs() == 1
+    assert sent == [sample_job()]
