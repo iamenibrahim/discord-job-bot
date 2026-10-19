@@ -1,7 +1,7 @@
 # SimplifyJobs Summer 2027 Discord Webhook
 
 Posts newly added, active Summer 2027 internships from
-`SimplifyJobs/Summer2027-Internships` to a Discord webhook. It reads Simplify's
+`SimplifyJobs/Summer2027-Internships` to a Discord webhook. It reads Simplifys
 structured JSON dataset instead of scraping the rendered README.
 
 ## Fix the `dotenv` import error
